@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import requests
-from datetime import datetime
 
 
 # ============================================================
@@ -15,16 +14,15 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📊 원화 기준 밴드 리밸런싱 계산기")
-
+st.title("📊 원화 기준 밴드 리밸런싱")
 st.caption(
-    "국내 ETF와 미국 ETF를 원화 기준으로 통일하여 "
+    "국내 ETF와 미국 ETF를 원화 기준으로 통합하여 "
     "밴드 리밸런싱을 계산합니다."
 )
 
 
 # ============================================================
-# Session State
+# Session State 초기화
 # ============================================================
 
 if "assets" not in st.session_state:
@@ -33,42 +31,43 @@ if "assets" not in st.session_state:
 if "usdkrw" not in st.session_state:
     st.session_state.usdkrw = 1400.0
 
-if "usdkrw_input" not in st.session_state:
-    st.session_state.usdkrw_input = 1400.0
-
 if "fx_date" not in st.session_state:
     st.session_state.fx_date = ""
 
 if "fx_error" not in st.session_state:
     st.session_state.fx_error = ""
 
-if "cash" not in st.session_state:
-    st.session_state.cash = 0.0
-
 if "result" not in st.session_state:
     st.session_state.result = None
 
+if "cash" not in st.session_state:
+    st.session_state.cash = 0.0
+
 
 # ============================================================
-# 자산 기본 구조
+# 자산 데이터 구조
 # ============================================================
 
 def create_asset():
 
     return {
+        # 종목 정보
         "name": "",
         "ticker": "",
         "market": "",
         "currency": "",
         "exchange": "",
 
+        # 목표 비중
         "target": 0.0,
         "lower": 0.0,
         "upper": 0.0,
 
+        # 보유량
         "shares": 0.0,
         "price": 0.0,
 
+        # 가격 정보
         "price_date": "",
         "price_error": "",
     }
@@ -84,6 +83,8 @@ def add_asset():
         create_asset()
     )
 
+    st.session_state.result = None
+
 
 # ============================================================
 # 자산 삭제
@@ -97,7 +98,6 @@ def delete_asset(index):
 
         st.session_state.assets.pop(index)
 
-        # 계산 결과 초기화
         st.session_state.result = None
 
 
@@ -135,7 +135,7 @@ def search_assets(query):
 
             quote_type = quote.get(
                 "quoteType",
-                ""
+                "",
             )
 
             if quote_type not in [
@@ -143,28 +143,20 @@ def search_assets(query):
                 "ETF",
                 "MUTUALFUND",
             ]:
-
                 continue
 
             results.append(
                 {
                     "symbol": symbol,
-
                     "name": (
-                        quote.get(
-                            "longname"
-                        )
-                        or quote.get(
-                            "shortname"
-                        )
+                        quote.get("longname")
+                        or quote.get("shortname")
                         or symbol
                     ),
-
                     "exchange": quote.get(
                         "exchange",
-                        ""
+                        "",
                     ),
-
                     "quoteType": quote_type,
                 }
             )
@@ -182,7 +174,7 @@ def search_assets(query):
 
 def detect_market(
     symbol,
-    exchange
+    exchange,
 ):
 
     symbol = (
@@ -193,13 +185,6 @@ def detect_market(
         exchange or ""
     ).upper()
 
-    if (
-        symbol.endswith(".KS")
-        or symbol.endswith(".KQ")
-    ):
-
-        return "국내"
-
     korean_exchanges = {
         "KSC",
         "KOE",
@@ -208,7 +193,11 @@ def detect_market(
         "KO",
     }
 
-    if exchange in korean_exchanges:
+    if (
+        symbol.endswith(".KS")
+        or symbol.endswith(".KQ")
+        or exchange in korean_exchanges
+    ):
 
         return "국내"
 
@@ -221,40 +210,38 @@ def detect_market(
 
 def normalize_ticker(
     ticker,
-    market
+    market,
 ):
 
-    ticker = ticker.strip().upper()
+    ticker = (
+        ticker or ""
+    ).strip().upper()
 
     if market != "국내":
-
         return ticker
 
     if (
         ticker.endswith(".KS")
         or ticker.endswith(".KQ")
     ):
-
         return ticker
 
-    # 6자리 한국 종목코드
     if (
         ticker.isdigit()
         and len(ticker) == 6
     ):
-
         return ticker + ".KS"
 
     return ticker
 
 
 # ============================================================
-# 최근 일봉 가격 조회
+# 최신 ETF 가격 조회
 # ============================================================
 
 @st.cache_data(ttl=300)
 def get_latest_price(
-    ticker
+    ticker,
 ):
 
     try:
@@ -274,7 +261,7 @@ def get_latest_price(
             return (
                 None,
                 None,
-                "가격 데이터를 찾을 수 없습니다."
+                "가격 데이터를 찾을 수 없습니다.",
             )
 
         close = (
@@ -287,7 +274,7 @@ def get_latest_price(
             return (
                 None,
                 None,
-                "종가 데이터를 찾을 수 없습니다."
+                "종가 데이터를 찾을 수 없습니다.",
             )
 
         price = float(
@@ -299,18 +286,18 @@ def get_latest_price(
             return (
                 None,
                 None,
-                "비정상적인 가격 데이터입니다."
+                "비정상적인 가격 데이터입니다.",
             )
 
-        date = (
+        price_date = (
             close.index[-1]
             .strftime("%Y-%m-%d")
         )
 
         return (
             price,
-            date,
-            None
+            price_date,
+            None,
         )
 
     except Exception as e:
@@ -318,7 +305,7 @@ def get_latest_price(
         return (
             None,
             None,
-            f"가격 조회 실패: {str(e)}"
+            f"가격 조회 실패: {str(e)}",
         )
 
 
@@ -330,10 +317,8 @@ def get_latest_price(
 def get_usdkrw():
 
     """
-    Frankfurter API에서 가장 최근 제공되는
-    USD/KRW 일별 환율을 가져온다.
-
-    Yahoo Finance의 KRW=X를 사용하지 않음.
+    Frankfurter 최신 영업일 USD/KRW 환율.
+    Yahoo Finance의 KRW=X를 사용하지 않는다.
     """
 
     try:
@@ -357,33 +342,38 @@ def get_usdkrw():
 
         data = response.json()
 
-        # v2 응답은 rate 객체/배열 구조를
-        # 안전하게 처리
         rate = None
-        rate_date = None
+        date = None
 
-        if isinstance(data, list):
+        # v2 응답
+        if isinstance(
+            data,
+            list,
+        ):
 
-            for item in data:
+            for row in data:
 
                 if (
-                    item.get("base")
+                    row.get("base")
                     == "USD"
-                    and item.get("quote")
+                    and row.get("quote")
                     == "KRW"
                 ):
 
-                    rate = item.get(
+                    rate = row.get(
                         "rate"
                     )
 
-                    rate_date = item.get(
+                    date = row.get(
                         "date"
                     )
 
                     break
 
-        elif isinstance(data, dict):
+        elif isinstance(
+            data,
+            dict,
+        ):
 
             if "rate" in data:
 
@@ -391,24 +381,26 @@ def get_usdkrw():
                     "rate"
                 )
 
-                rate_date = data.get(
+                date = data.get(
                     "date"
                 )
 
             elif "rates" in data:
 
-                rates = data["rates"]
+                rates = data.get(
+                    "rates"
+                )
 
                 if isinstance(
                     rates,
-                    dict
+                    dict,
                 ):
 
                     rate = rates.get(
                         "KRW"
                     )
 
-                rate_date = data.get(
+                date = data.get(
                     "date"
                 )
 
@@ -417,7 +409,7 @@ def get_usdkrw():
             return (
                 None,
                 None,
-                "USD/KRW 환율 데이터를 찾지 못했습니다."
+                "USD/KRW 환율 데이터를 찾지 못했습니다.",
             )
 
         rate = float(rate)
@@ -427,13 +419,13 @@ def get_usdkrw():
             return (
                 None,
                 None,
-                "비정상적인 환율 값입니다."
+                "비정상적인 환율 값입니다.",
             )
 
         return (
             rate,
-            rate_date,
-            None
+            date,
+            None,
         )
 
     except requests.exceptions.RequestException as e:
@@ -441,7 +433,7 @@ def get_usdkrw():
         return (
             None,
             None,
-            f"환율 API 연결 실패: {str(e)}"
+            f"환율 API 연결 실패: {str(e)}",
         )
 
     except Exception as e:
@@ -449,33 +441,9 @@ def get_usdkrw():
         return (
             None,
             None,
-            f"환율 조회 실패: {str(e)}"
+            f"환율 조회 실패: {str(e)}",
         )
-        
-def update_exchange_rate():
-    """
-    최신 USD/KRW 환율을 조회하고
-    환율 입력 위젯과 실제 계산값을 동시에 업데이트한다.
-    """
 
-    rate, date, error = get_usdkrw()
-
-    if error:
-
-        st.session_state.fx_error = error
-
-        return
-
-    # 실제 계산에 사용할 환율
-    st.session_state.usdkrw = float(rate)
-
-    # 화면의 숫자 입력칸
-    st.session_state.usdkrw_input = float(rate)
-
-    # 조회 기준일
-    st.session_state.fx_date = date or ""
-
-    st.session_state.fx_error = ""
 
 # ============================================================
 # 리밸런싱 계산
@@ -484,42 +452,42 @@ def update_exchange_rate():
 def calculate_rebalancing(
     cash,
     assets,
-    usdkrw
+    usdkrw,
 ):
-
-    # --------------------------------------------------------
-    # 계산용 복사본 생성
-    # --------------------------------------------------------
 
     calculated = []
 
-    for asset in assets:
+    # --------------------------------------------------------
+    # 보유자산 계산
+    # --------------------------------------------------------
 
-        item = asset.copy()
+    for original in assets:
 
-        if item["market"] == "미국":
+        asset = original.copy()
 
-            item["amount_krw"] = (
-                item["shares"]
-                * item["price"]
+        if asset["market"] == "미국":
+
+            asset["amount_krw"] = (
+                asset["shares"]
+                * asset["price"]
                 * usdkrw
             )
 
-        elif item["market"] == "국내":
+        elif asset["market"] == "국내":
 
-            item["amount_krw"] = (
-                item["shares"]
-                * item["price"]
+            asset["amount_krw"] = (
+                asset["shares"]
+                * asset["price"]
             )
 
         else:
 
             raise ValueError(
-                f"{item['name']}의 시장이 지정되지 않았습니다."
+                f"{asset['name']}의 시장을 확인해주세요."
             )
 
         calculated.append(
-            item
+            asset
         )
 
 
@@ -530,11 +498,10 @@ def calculate_rebalancing(
     total_assets = (
         cash
         + sum(
-            item["amount_krw"]
-            for item in calculated
+            asset["amount_krw"]
+            for asset in calculated
         )
     )
-
 
     if total_assets <= 0:
 
@@ -544,14 +511,13 @@ def calculate_rebalancing(
 
 
     # --------------------------------------------------------
-    # 목표 비중 합계
+    # 목표비중 검증
     # --------------------------------------------------------
 
     target_sum = sum(
-        item["target"]
-        for item in calculated
+        asset["target"]
+        for asset in calculated
     )
-
 
     if abs(
         target_sum - 100
@@ -559,79 +525,80 @@ def calculate_rebalancing(
 
         raise ValueError(
             f"목표 비중 합계가 "
-            f"{target_sum:.2f}%입니다."
+            f"{target_sum:.2f}%입니다. "
+            "100%가 되도록 입력해주세요."
         )
 
 
     # --------------------------------------------------------
-    # 현재 상태 계산
+    # 현재비중 초기화
     # --------------------------------------------------------
 
-    for item in calculated:
+    for asset in calculated:
 
-        item["current_weight"] = (
-            item["amount_krw"]
+        asset["current_weight"] = (
+            asset["amount_krw"]
             / total_assets
             * 100
         )
 
-        item["sell_amount"] = 0.0
-        item["buy_amount"] = 0.0
+        asset["sell_amount"] = 0.0
+        asset["buy_amount"] = 0.0
 
-        item["final_amount"] = (
-            item["amount_krw"]
+        asset["final_amount"] = (
+            asset["amount_krw"]
         )
 
-        item["status"] = "유지"
+        asset["status"] = "유지"
 
 
     # --------------------------------------------------------
-    # 1. 상단 초과 자산 매도
+    # 1. 상단 초과 → 목표비중까지 매도
     # --------------------------------------------------------
 
-    for item in calculated:
+    for asset in calculated:
 
         if (
-            item["current_weight"]
-            > item["upper"]
+            asset["current_weight"]
+            > asset["upper"]
         ):
 
             target_amount = (
                 total_assets
-                * item["target"]
+                * asset["target"]
                 / 100
             )
 
             sell_amount = (
-                item["amount_krw"]
+                asset["amount_krw"]
                 - target_amount
             )
 
             sell_amount = max(
                 sell_amount,
-                0
+                0.0,
             )
 
-            item["sell_amount"] = (
+            asset["sell_amount"] = (
                 sell_amount
             )
 
-            item["final_amount"] = (
+            asset["final_amount"] = (
                 target_amount
             )
 
-            item["status"] = (
+            asset["status"] = (
                 "상단 초과 → 목표까지 매도"
             )
 
 
     # --------------------------------------------------------
-    # 2. 사용 가능한 자금
+    # 2. 현금 + 매도대금
     # --------------------------------------------------------
 
     total_sell = sum(
-        item["sell_amount"]
-        for item in calculated
+        asset["sell_amount"]
+        for asset in calculated
     )
 
     available_cash = (
@@ -641,21 +608,21 @@ def calculate_rebalancing(
 
 
     # --------------------------------------------------------
-    # 3. 하단 미달 자산
+    # 3. 하단 미달
     # --------------------------------------------------------
 
     underweight = []
 
-    for item in calculated:
+    for asset in calculated:
 
         if (
-            item["current_weight"]
-            < item["lower"]
+            asset["current_weight"]
+            < asset["lower"]
         ):
 
             buy_difference = (
-                item["target"]
-                - item["current_weight"]
+                asset["target"]
+                - asset["current_weight"]
             )
 
             needed_amount = (
@@ -664,27 +631,26 @@ def calculate_rebalancing(
                 / 100
             )
 
-            item["buy_difference"] = (
+            asset["buy_difference"] = (
                 buy_difference
             )
 
-            item["needed_amount"] = (
+            asset["needed_amount"] = (
                 needed_amount
             )
 
-            item["status"] = (
-                "하단 미달 → 목표까지 매수"
+            asset["status"] = (
+                "하단 미달 → 매수"
             )
 
             underweight.append(
-                item
+                asset
             )
 
         else:
 
-            item["buy_difference"] = 0
-
-            item["needed_amount"] = 0
+            asset["buy_difference"] = 0.0
+            asset["needed_amount"] = 0.0
 
 
     # --------------------------------------------------------
@@ -692,72 +658,74 @@ def calculate_rebalancing(
     # --------------------------------------------------------
 
     total_needed = sum(
-        item["needed_amount"]
-        for item in underweight
+        asset["needed_amount"]
+        for asset in underweight
     )
 
 
-    # 현금이 부족한 경우
+    # 현금이 부족하면
+    # 목표와 현재 비중 차이에 비례하여 배분
     if (
         total_needed > 0
         and available_cash <= total_needed
     ):
 
         total_difference = sum(
-            item["buy_difference"]
-            for item in underweight
+            asset["buy_difference"]
+            for asset in underweight
         )
 
         if total_difference > 0:
 
-            for item in underweight:
+            for asset in underweight:
 
                 buy_amount = (
                     available_cash
-                    * item["buy_difference"]
+                    * asset["buy_difference"]
                     / total_difference
                 )
 
-                item["buy_amount"] = (
+                asset["buy_amount"] = (
                     buy_amount
                 )
 
-                item["final_amount"] = (
-                    item["amount_krw"]
+                asset["final_amount"] = (
+                    asset["amount_krw"]
                     + buy_amount
                 )
 
 
-    # 현금이 충분한 경우
+    # 현금이 충분하면
+    # 목표비중까지 매수
     elif (
         total_needed > 0
         and available_cash > total_needed
     ):
 
-        for item in underweight:
+        for asset in underweight:
 
             buy_amount = (
-                item["needed_amount"]
+                asset["needed_amount"]
             )
 
-            item["buy_amount"] = (
+            asset["buy_amount"] = (
                 buy_amount
             )
 
-            item["final_amount"] = (
-                item["amount_krw"]
+            asset["final_amount"] = (
+                asset["amount_krw"]
                 + buy_amount
             )
 
 
     # --------------------------------------------------------
-    # 5. 최종 비중
+    # 5. 최종비중
     # --------------------------------------------------------
 
-    for item in calculated:
+    for asset in calculated:
 
-        item["final_weight"] = (
-            item["final_amount"]
+        asset["final_weight"] = (
+            asset["final_amount"]
             / total_assets
             * 100
         )
@@ -768,18 +736,17 @@ def calculate_rebalancing(
     # --------------------------------------------------------
 
     total_buy = sum(
-        item["buy_amount"]
-        for item in calculated
+        asset["buy_amount"]
+        for asset in calculated
     )
 
     final_cash = (
         total_assets
         - sum(
-            item["final_amount"]
-            for item in calculated
+            asset["final_amount"]
+            for asset in calculated
         )
     )
-
 
     if abs(
         final_cash
@@ -789,21 +756,11 @@ def calculate_rebalancing(
 
 
     return {
-
-        "total_assets":
-            total_assets,
-
-        "total_sell":
-            total_sell,
-
-        "total_buy":
-            total_buy,
-
-        "final_cash":
-            final_cash,
-
-        "assets":
-            calculated,
+        "total_assets": total_assets,
+        "total_sell": total_sell,
+        "total_buy": total_buy,
+        "final_cash": final_cash,
+        "assets": calculated,
     }
 
 
@@ -813,17 +770,25 @@ def calculate_rebalancing(
 
 st.header("① USD/KRW 환율")
 
-fx_col1, fx_col2 = st.columns([4, 1])
+
+fx_col1, fx_col2 = st.columns(
+    [4, 1]
+)
 
 
 with fx_col1:
 
-    st.number_input(
+    # 실제 계산용 usdkrw와
+    # 위젯 키를 분리한다.
+    fx_input = st.number_input(
         "USD/KRW",
         min_value=0.0,
         step=0.01,
+        value=float(
+            st.session_state.usdkrw
+        ),
         format="%.2f",
-        key="usdkrw_input",
+        key="fx_input_widget",
     )
 
 
@@ -831,37 +796,51 @@ with fx_col2:
 
     st.write("")
 
-    st.button(
+    refresh_fx = st.button(
         "🔄 최신 환율 조회",
-        key="refresh_fx",
         use_container_width=True,
-        on_click=update_exchange_rate,
     )
 
 
-# ------------------------------------------------------------
-# 오류
-# ------------------------------------------------------------
-
-if st.session_state.fx_error:
-
-    st.error(
-        st.session_state.fx_error
-    )
-
-
-# ------------------------------------------------------------
-# 실제 계산에 사용할 환율
-# ------------------------------------------------------------
-
-st.session_state.usdkrw = (
-    st.session_state.usdkrw_input
+# 사용자가 직접 입력한 환율을 계산용 값으로 반영
+st.session_state.usdkrw = float(
+    fx_input
 )
 
 
-# ------------------------------------------------------------
-# 조회 정보
-# ------------------------------------------------------------
+# 자동 조회
+if refresh_fx:
+
+    rate, date, error = (
+        get_usdkrw()
+    )
+
+    if error:
+
+        st.session_state.fx_error = (
+            error
+        )
+
+        st.error(
+            error
+        )
+
+    else:
+
+        st.session_state.usdkrw = (
+            float(rate)
+        )
+
+        st.session_state.fx_date = (
+            date or ""
+        )
+
+        st.session_state.fx_error = ""
+
+        # 위젯 state를 이 실행에서 직접 변경하지 않고
+        # 다음 rerun에서 새 기본값을 사용하도록 한다.
+        st.rerun()
+
 
 if st.session_state.fx_date:
 
@@ -880,13 +859,13 @@ else:
         f"1 USD = "
         f"{st.session_state.usdkrw:,.2f} KRW"
     )
+
+
 # ============================================================
-# ② 자산 구성
+# ② 자산
 # ============================================================
 
-st.header(
-    "② 자산 구성"
-)
+st.header("② 자산 구성")
 
 
 if st.button(
@@ -900,18 +879,20 @@ if st.button(
 
 
 # ============================================================
-# 자산 입력
+# 자산별 입력
 # ============================================================
 
 for i, asset in enumerate(
     st.session_state.assets
 ):
 
-    st.subheader(
+    title = (
         asset["name"]
         if asset["name"]
         else f"자산 {i + 1}"
     )
+
+    st.subheader(title)
 
 
     # --------------------------------------------------------
@@ -926,7 +907,7 @@ for i, asset in enumerate(
     with search_col1:
 
         search_query = st.text_input(
-            "티커 또는 종목명 검색",
+            "티커 또는 종목명",
             key=f"search_{i}",
             placeholder=(
                 "예: VOO / S&P 500 / KODEX 200"
@@ -938,24 +919,25 @@ for i, asset in enumerate(
 
         st.write("")
 
-        if st.button(
+        search_clicked = st.button(
             "🔍 검색",
             key=f"search_button_{i}",
             use_container_width=True,
-        ):
+        )
 
-            results = search_assets(
-                search_query
-            )
 
-            st.session_state[
-                f"results_{i}"
-            ] = results
+    if search_clicked:
+
+        st.session_state[
+            f"search_results_{i}"
+        ] = search_assets(
+            search_query
+        )
 
 
     results = st.session_state.get(
-        f"results_{i}",
-        []
+        f"search_results_{i}",
+        [],
     )
 
 
@@ -979,7 +961,7 @@ for i, asset in enumerate(
         selected_label = st.selectbox(
             "검색 결과",
             labels,
-            key=f"selected_{i}",
+            key=f"selected_result_{i}",
         )
 
 
@@ -996,51 +978,43 @@ for i, asset in enumerate(
 
         if st.button(
             "✅ 이 종목 선택",
-            key=f"select_button_{i}",
+            key=f"select_asset_{i}",
             use_container_width=True,
         ):
-
-            ticker = selected[
-                "symbol"
-            ]
-
-            market = detect_market(
-                ticker,
-                selected["exchange"]
-            )
-
 
             asset["name"] = selected[
                 "name"
             ]
 
-            asset["ticker"] = ticker
-
-            asset["market"] = market
+            asset["ticker"] = selected[
+                "symbol"
+            ]
 
             asset["exchange"] = selected[
                 "exchange"
             ]
 
+            asset["market"] = detect_market(
+                selected["symbol"],
+                selected["exchange"],
+            )
+
             asset["currency"] = (
                 "USD"
-                if market == "미국"
+                if asset["market"] == "미국"
                 else "KRW"
             )
 
-
-            # 종목을 바꾸면 기존 가격 초기화
+            # 종목을 바꾸면 가격 초기화
             asset["price"] = 0.0
-
             asset["price_date"] = ""
-
             asset["price_error"] = ""
 
-
             st.session_state[
-                f"results_{i}"
+                f"search_results_{i}"
             ] = []
 
+            st.session_state.result = None
 
             st.rerun()
 
@@ -1052,305 +1026,221 @@ for i, asset in enumerate(
     if asset["ticker"]:
 
         st.info(
-            f"**{asset['name']}**  |  "
-            f"`{asset['ticker']}`  |  "
-            f"{asset['market']} | "
-            f"{asset['currency']}"
+            f"**{asset['name']}**  \n"
+            f"티커: `{asset['ticker']}`  \n"
+            f"시장: **{asset['market']}**  \n"
+            f"통화: **{asset['currency']}**"
         )
 
 
-    # --------------------------------------------------------
-    # 목표 비중 / 밴드
-    # --------------------------------------------------------
-
-    st.markdown(
-        "### 목표 비중 및 밴드"
-    )
-
-
-    # ============================================================
-# 목표 비중 / 밴드
-# ============================================================
-
-st.markdown("### 목표 비중 및 밴드")
-
-
-# ------------------------------------------------------------
-# 초기 state
-# ------------------------------------------------------------
-
-target_key = f"target_{i}"
-lower_key = f"lower_{i}"
-upper_key = f"upper_{i}"
-
-target_slider_key = f"target_slider_{i}"
-target_number_key = f"target_number_{i}"
-
-lower_slider_key = f"lower_slider_{i}"
-lower_number_key = f"lower_number_{i}"
-
-upper_slider_key = f"upper_slider_{i}"
-upper_number_key = f"upper_number_{i}"
-
-
-if target_key not in st.session_state:
-    st.session_state[target_key] = float(
-        asset["target"]
-    )
-
-if lower_key not in st.session_state:
-    st.session_state[lower_key] = float(
-        asset["lower"]
-    )
-
-if upper_key not in st.session_state:
-    st.session_state[upper_key] = float(
-        asset["upper"]
-    )
-
-
-# ------------------------------------------------------------
-# 목표 비중
-# ------------------------------------------------------------
-
-target_col1, target_col2 = st.columns([5, 1])
-
-
-with target_col1:
-
-    target_slider = st.slider(
-        "목표 비중",
-        min_value=0.0,
-        max_value=100.0,
-        value=float(
-            st.session_state[target_key]
-        ),
-        step=0.5,
-        key=target_slider_key,
-    )
-
-
-with target_col2:
-
-    target_number = st.number_input(
-        "목표 %",
-        min_value=0.0,
-        max_value=100.0,
-        value=float(
-            st.session_state[target_key]
-        ),
-        step=0.5,
-        key=target_number_key,
-    )
-
-
-# ------------------------------------------------------------
-# 두 입력값 중 현재 숫자 입력을 우선 사용
-# ------------------------------------------------------------
-
-if target_number != st.session_state[target_key]:
-
-    target = float(target_number)
-
-elif target_slider != st.session_state[target_key]:
-
-    target = float(target_slider)
-
-else:
-
-    target = float(
-        st.session_state[target_key]
-    )
-
-
-st.session_state[target_key] = target
-asset["target"] = target
-
-
-# ------------------------------------------------------------
-# 하단
-# ------------------------------------------------------------
-
-lower = min(
-    float(
-        st.session_state[lower_key]
-    ),
-    target
-)
-
-
-lower_col1, lower_col2 = st.columns([5, 1])
-
-
-with lower_col1:
-
-    lower_slider = st.slider(
-        "하단 비중",
-        min_value=0.0,
-        max_value=target,
-        value=lower,
-        step=0.5,
-        key=lower_slider_key,
-    )
-
-
-with lower_col2:
-
-    lower_number = st.number_input(
-        "하단 %",
-        min_value=0.0,
-        max_value=target,
-        value=lower,
-        step=0.5,
-        key=lower_number_key,
-    )
-
-
-if lower_number != st.session_state[lower_key]:
-
-    lower = float(
-        lower_number
-    )
-
-elif lower_slider != st.session_state[lower_key]:
-
-    lower = float(
-        lower_slider
-    )
-
-else:
-
-    lower = float(
-        st.session_state[lower_key]
-    )
-
-
-lower = min(
-    lower,
-    target
-)
-
-
-st.session_state[lower_key] = lower
-asset["lower"] = lower
-
-
-# ------------------------------------------------------------
-# 상단
-# ------------------------------------------------------------
-
-upper = max(
-    float(
-        st.session_state[upper_key]
-    ),
-    target
-)
-
-
-upper_col1, upper_col2 = st.columns([5, 1])
-
-
-with upper_col1:
-
-    upper_slider = st.slider(
-        "상단 비중",
-        min_value=target,
-        max_value=100.0,
-        value=upper,
-        step=0.5,
-        key=upper_slider_key,
-    )
-
-
-with upper_col2:
-
-    upper_number = st.number_input(
-        "상단 %",
-        min_value=target,
-        max_value=100.0,
-        value=upper,
-        step=0.5,
-        key=upper_number_key,
-    )
-
-
-if upper_number != st.session_state[upper_key]:
-
-    upper = float(
-        upper_number
-    )
-
-elif upper_slider != st.session_state[upper_key]:
-
-    upper = float(
-        upper_slider
-    )
-
-else:
-
-    upper = float(
-        st.session_state[upper_key]
-    )
-
-
-upper = max(
-    upper,
-    target
-)
-
-
-st.session_state[upper_key] = upper
-asset["upper"] = upper
-
-
-# ------------------------------------------------------------
-# 표시
-# ------------------------------------------------------------
-
-st.caption(
-    f"밴드: "
-    f"{lower:.1f}% ≤ "
-    f"{target:.1f}% ≤ "
-    f"{upper:.1f}%"
-)
-    # --------------------------------------------------------
-    # 밴드 저장
-    # --------------------------------------------------------
-
-    if (
-        lower
-        <= target
-        <= upper
+    # ========================================================
+    # 비중 / 밴드 FORM
+    # ========================================================
+
+    with st.form(
+        key=f"weight_form_{i}"
     ):
 
-        asset["target"] = target
-
-        asset["lower"] = lower
-
-        asset["upper"] = upper
-
-    else:
-
-        st.warning(
-            "하단 ≤ 목표 ≤ 상단이 되도록 "
-            "입력해주세요."
+        st.markdown(
+            "#### 목표 비중 및 밴드"
         )
+
+        # ----------------------------------------------------
+        # 현재값
+        # ----------------------------------------------------
+
+        current_target = float(
+            asset["target"]
+        )
+
+        current_lower = float(
+            asset["lower"]
+        )
+
+        current_upper = float(
+            asset["upper"]
+        )
+
+
+        # ----------------------------------------------------
+        # 목표
+        # ----------------------------------------------------
+
+        target_col1, target_col2 = (
+            st.columns([4, 1])
+        )
+
+
+        with target_col1:
+
+            target_slider = st.slider(
+                "목표 비중",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_target,
+                step=0.5,
+            )
+
+
+        with target_col2:
+
+            target_number = st.number_input(
+                "목표 %",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_target,
+                step=0.5,
+                format="%.1f",
+            )
+
+
+        # ----------------------------------------------------
+        # 하단
+        # ----------------------------------------------------
+
+        lower_col1, lower_col2 = (
+            st.columns([4, 1])
+        )
+
+
+        with lower_col1:
+
+            lower_slider = st.slider(
+                "하단 비중",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_lower,
+                step=0.5,
+            )
+
+
+        with lower_col2:
+
+            lower_number = st.number_input(
+                "하단 %",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_lower,
+                step=0.5,
+                format="%.1f",
+            )
+
+
+        # ----------------------------------------------------
+        # 상단
+        # ----------------------------------------------------
+
+        upper_col1, upper_col2 = (
+            st.columns([4, 1])
+        )
+
+
+        with upper_col1:
+
+            upper_slider = st.slider(
+                "상단 비중",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_upper,
+                step=0.5,
+            )
+
+
+        with upper_col2:
+
+            upper_number = st.number_input(
+                "상단 %",
+                min_value=0.0,
+                max_value=100.0,
+                value=current_upper,
+                step=0.5,
+                format="%.1f",
+            )
+
+
+        # ----------------------------------------------------
+        # 적용 버튼
+        # ----------------------------------------------------
+
+        apply_weights = st.form_submit_button(
+            "✅ 비중 및 밴드 적용",
+            use_container_width=True,
+        )
+
+
+    # --------------------------------------------------------
+    # Form 제출
+    # --------------------------------------------------------
+
+    if apply_weights:
+
+        # ----------------------------------------------------
+        # 슬라이더와 숫자 입력이 다를 경우
+        #
+        # 숫자 입력값을 우선 사용
+        # ----------------------------------------------------
+
+        target = float(
+            target_number
+        )
+
+        lower = float(
+            lower_number
+        )
+
+        upper = float(
+            upper_number
+        )
+
+
+        # ----------------------------------------------------
+        # 검증
+        # ----------------------------------------------------
+
+        if not (
+            0
+            <= lower
+            <= target
+            <= upper
+            <= 100
+        ):
+
+            st.error(
+                "반드시 "
+                "하단 ≤ 목표 ≤ 상단 "
+                "조건을 만족해야 합니다."
+            )
+
+        else:
+
+            asset["target"] = target
+            asset["lower"] = lower
+            asset["upper"] = upper
+
+            st.session_state.result = None
+
+            st.success(
+                f"적용 완료: "
+                f"{lower:.1f}% ≤ "
+                f"{target:.1f}% ≤ "
+                f"{upper:.1f}%"
+            )
 
 
     st.caption(
-        f"밴드: "
-        f"{lower:.1f}% ~ "
-        f"{target:.1f}% ~ "
-        f"{upper:.1f}%"
+        f"현재 적용값: "
+        f"{asset['lower']:.1f}% ≤ "
+        f"{asset['target']:.1f}% ≤ "
+        f"{asset['upper']:.1f}%"
     )
 
 
-    # --------------------------------------------------------
-    # 현재 보유량
-    # --------------------------------------------------------
+    # ========================================================
+    # 보유 주식 / 가격
+    # ========================================================
 
     st.markdown(
-        "### 현재 보유량"
+        "#### 현재 보유량"
     )
 
 
@@ -1372,8 +1262,8 @@ st.caption(
             key=f"shares_{i}",
         )
 
-        asset["shares"] = (
-            float(shares)
+        asset["shares"] = float(
+            shares
         )
 
 
@@ -1390,37 +1280,41 @@ st.caption(
             key=f"price_{i}",
         )
 
-        asset["price"] = (
-            float(price)
+        asset["price"] = float(
+            price
         )
 
 
     with holdings_col3:
 
-        if asset["market"]:
+        if asset["ticker"]:
 
-            if st.button(
+            get_price_clicked = st.button(
                 "🔄 최신 가격 조회",
-                key=f"price_button_{i}",
+                key=f"get_price_{i}",
                 use_container_width=True,
-            ):
+            )
+
+            if get_price_clicked:
 
                 ticker = normalize_ticker(
                     asset["ticker"],
-                    asset["market"]
+                    asset["market"],
                 )
 
-
-                price_value, date, error = (
+                price_value, price_date, error = (
                     get_latest_price(
                         ticker
                     )
                 )
 
-
                 if error:
 
                     asset["price_error"] = (
+                        error
+                    )
+
+                    st.error(
                         error
                     )
 
@@ -1431,14 +1325,12 @@ st.caption(
                     )
 
                     asset["price_date"] = (
-                        date
-                        or ""
+                        price_date or ""
                     )
 
                     asset["price_error"] = ""
 
-
-                st.rerun()
+                    st.rerun()
 
 
     if asset["price_error"]:
@@ -1458,9 +1350,9 @@ st.caption(
         )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # 원화 평가액
-    # --------------------------------------------------------
+    # ========================================================
 
     if (
         asset["ticker"]
@@ -1489,9 +1381,9 @@ st.caption(
         )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # 삭제
-    # --------------------------------------------------------
+    # ========================================================
 
     if st.button(
         "🗑️ 자산 삭제",
@@ -1510,20 +1402,18 @@ st.caption(
 # ③ 현금
 # ============================================================
 
-st.header(
-    "③ 현재 보유 현금"
-)
+st.header("③ 현재 보유 현금")
 
 
 cash = st.number_input(
-    "보유 현금 (KRW)",
+    "현재 보유 현금 (KRW)",
     min_value=0.0,
     value=float(
         st.session_state.cash
     ),
     step=10000.0,
     format="%.0f",
-    key="cash_input",
+    key="cash_widget",
 )
 
 st.session_state.cash = float(
@@ -1535,16 +1425,17 @@ st.session_state.cash = float(
 # ④ 리밸런싱 계산
 # ============================================================
 
-st.header(
-    "④ 리밸런싱 결과"
-)
+st.header("④ 리밸런싱")
 
 
-if st.button(
+calculate_clicked = st.button(
     "🚀 리밸런싱 계산",
     type="primary",
     use_container_width=True,
-):
+)
+
+
+if calculate_clicked:
 
     try:
 
@@ -1563,25 +1454,18 @@ if st.button(
             st.session_state.assets
         ):
 
-            if not asset["name"]:
-
-                raise ValueError(
-                    "모든 자산을 선택해주세요."
-                )
-
-
             if not asset["ticker"]:
 
                 raise ValueError(
-                    f"{asset['name']}의 종목을 선택해주세요."
+                    "모든 자산을 검색해서 선택해주세요."
                 )
 
 
             if asset["price"] <= 0:
 
                 raise ValueError(
-                    f"{asset['name']}의 가격을 "
-                    "조회해주세요."
+                    f"{asset['name']}의 현재가를 "
+                    "입력하거나 최신 가격을 조회해주세요."
                 )
 
 
@@ -1656,7 +1540,7 @@ if st.button(
 
 
 # ============================================================
-# ⑤ 결과 표시
+# ⑤ 결과
 # ============================================================
 
 if (
@@ -1716,7 +1600,7 @@ if (
 
 
     # --------------------------------------------------------
-    # 거래
+    # 실제 거래
     # --------------------------------------------------------
 
     st.subheader(
@@ -1729,10 +1613,7 @@ if (
 
     for asset in result["assets"]:
 
-        if (
-            asset["sell_amount"]
-            > 0.5
-        ):
+        if asset["sell_amount"] > 0.5:
 
             trades.append(
                 {
@@ -1751,10 +1632,7 @@ if (
             )
 
 
-        if (
-            asset["buy_amount"]
-            > 0.5
-        ):
+        if asset["buy_amount"] > 0.5:
 
             trades.append(
                 {
@@ -1779,7 +1657,6 @@ if (
             trades
         )
 
-
         st.dataframe(
             trade_df,
             use_container_width=True,
@@ -1796,7 +1673,7 @@ if (
     else:
 
         st.info(
-            "현재 밴드를 벗어난 자산이 없어 "
+            "현재 모든 자산이 밴드 안에 있어 "
             "매매가 필요하지 않습니다."
         )
 
@@ -1813,9 +1690,7 @@ if (
     rows = []
 
 
-    for asset in result[
-        "assets"
-    ]:
+    for asset in result["assets"]:
 
         rows.append(
             {
@@ -1829,20 +1704,16 @@ if (
                     asset["amount_krw"],
 
                 "현재 비중":
-                    asset["current_weight"]
-                    / 100,
+                    asset["current_weight"],
 
                 "하단":
-                    asset["lower"]
-                    / 100,
+                    asset["lower"],
 
                 "목표":
-                    asset["target"]
-                    / 100,
+                    asset["target"],
 
                 "상단":
-                    asset["upper"]
-                    / 100,
+                    asset["upper"],
 
                 "매도":
                     asset["sell_amount"],
@@ -1854,8 +1725,7 @@ if (
                     asset["final_amount"],
 
                 "분배 후 비중":
-                    asset["final_weight"]
-                    / 100,
+                    asset["final_weight"],
 
                 "상태":
                     asset["status"],
@@ -1932,8 +1802,8 @@ if (
 
 
     st.caption(
-        "미국 ETF는 USD 가격 × USD/KRW 환율로 "
-        "원화 환산합니다. "
-        "가격과 환율은 최신 제공 일봉 기준이며 "
-        "실제 주문 체결가격과 다를 수 있습니다."
+        "미국 자산은 USD 가격을 USD/KRW 환율로 "
+        "원화 환산합니다. 가격과 환율은 최신 제공 "
+        "일봉 데이터 기준이며 실제 주문 체결가격과 "
+        "다를 수 있습니다."
     )
