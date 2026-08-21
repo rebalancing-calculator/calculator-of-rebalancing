@@ -3,6 +3,40 @@ import pandas as pd
 import yfinance as yf
 
 
+@st.cache_data(ttl=300)
+def get_exchange_rate():
+    """
+    Yahoo Finance에서 USD/KRW 환율을 조회한다.
+    KRW=X = USD/KRW
+    """
+
+    try:
+        ticker = yf.Ticker("KRW=X")
+
+        history = ticker.history(
+            period="5d",
+            interval="1d",
+            auto_adjust=False
+        )
+
+        if history.empty:
+            return None, "USD/KRW 환율 데이터를 가져오지 못했습니다."
+
+        close = history["Close"].dropna()
+
+        if close.empty:
+            return None, "USD/KRW 환율 데이터가 없습니다."
+
+        rate = float(close.iloc[-1])
+
+        if rate <= 0:
+            return None, "비정상적인 환율 값입니다."
+
+        return rate, None
+
+    except Exception as e:
+        return None, f"환율 조회 실패: {str(e)}"
+
 # ============================================================
 # 기본 설정
 # ============================================================
@@ -274,7 +308,6 @@ with fx_col1:
         format="%.2f"
     )
 
-
 with fx_col2:
 
     st.write("")
@@ -287,17 +320,10 @@ with fx_col2:
         rate, error = get_exchange_rate()
 
         if error:
-
             st.error(error)
 
         else:
-
             st.session_state.usdkrw = rate
-
-            st.success(
-                f"환율 업데이트 완료: "
-                f"{rate:,.2f}원"
-            )
 
             st.rerun()
 
@@ -306,7 +332,6 @@ st.caption(
     f"현재 적용 환율: "
     f"1 USD = {st.session_state.usdkrw:,.2f} KRW"
 )
-
 # ============================================================
 # 리밸런싱 계산
 # ============================================================
