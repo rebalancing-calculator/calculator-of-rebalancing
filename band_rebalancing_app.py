@@ -33,6 +33,9 @@ if "assets" not in st.session_state:
 if "usdkrw" not in st.session_state:
     st.session_state.usdkrw = 1400.0
 
+if "usdkrw_input" not in st.session_state:
+    st.session_state.usdkrw_input = 1400.0
+
 if "fx_date" not in st.session_state:
     st.session_state.fx_date = ""
 
@@ -448,7 +451,31 @@ def get_usdkrw():
             None,
             f"환율 조회 실패: {str(e)}"
         )
+        
+def update_exchange_rate():
+    """
+    최신 USD/KRW 환율을 조회하고
+    환율 입력 위젯과 실제 계산값을 동시에 업데이트한다.
+    """
 
+    rate, date, error = get_usdkrw()
+
+    if error:
+
+        st.session_state.fx_error = error
+
+        return
+
+    # 실제 계산에 사용할 환율
+    st.session_state.usdkrw = float(rate)
+
+    # 화면의 숫자 입력칸
+    st.session_state.usdkrw_input = float(rate)
+
+    # 조회 기준일
+    st.session_state.fx_date = date or ""
+
+    st.session_state.fx_error = ""
 
 # ============================================================
 # 리밸런싱 계산
@@ -784,14 +811,9 @@ def calculate_rebalancing(
 # ① 환율
 # ============================================================
 
-st.header(
-    "① USD/KRW 환율"
-)
+st.header("① USD/KRW 환율")
 
-
-fx_col1, fx_col2 = st.columns(
-    [4, 1]
-)
+fx_col1, fx_col2 = st.columns([4, 1])
 
 
 with fx_col1:
@@ -801,7 +823,7 @@ with fx_col1:
         min_value=0.0,
         step=0.01,
         format="%.2f",
-        key="usdkrw",
+        key="usdkrw_input",
     )
 
 
@@ -809,36 +831,17 @@ with fx_col2:
 
     st.write("")
 
-    if st.button(
+    st.button(
         "🔄 최신 환율 조회",
+        key="refresh_fx",
         use_container_width=True,
-    ):
+        on_click=update_exchange_rate,
+    )
 
-        rate, date, error = (
-            get_usdkrw()
-        )
 
-        if error:
-
-            st.session_state.fx_error = (
-                error
-            )
-
-        else:
-
-            st.session_state.usdkrw = (
-                rate
-            )
-
-            st.session_state.fx_date = (
-                date
-                or ""
-            )
-
-            st.session_state.fx_error = ""
-
-        st.rerun()
-
+# ------------------------------------------------------------
+# 오류
+# ------------------------------------------------------------
 
 if st.session_state.fx_error:
 
@@ -846,6 +849,19 @@ if st.session_state.fx_error:
         st.session_state.fx_error
     )
 
+
+# ------------------------------------------------------------
+# 실제 계산에 사용할 환율
+# ------------------------------------------------------------
+
+st.session_state.usdkrw = (
+    st.session_state.usdkrw_input
+)
+
+
+# ------------------------------------------------------------
+# 조회 정보
+# ------------------------------------------------------------
 
 if st.session_state.fx_date:
 
@@ -864,8 +880,6 @@ else:
         f"1 USD = "
         f"{st.session_state.usdkrw:,.2f} KRW"
     )
-
-
 # ============================================================
 # ② 자산 구성
 # ============================================================
