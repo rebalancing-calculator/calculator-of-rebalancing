@@ -256,79 +256,56 @@ def get_price(symbol):
 # USD/KRW 환율 조회
 # ============================================================
 
-@st.cache_data(ttl=300)
-def get_exchange_rate():
+# ============================================================
+# 환율
+# ============================================================
 
-    try:
+st.header("💱 USD/KRW 환율")
 
-        ticker = yf.Ticker(
-            "KRW=X"
-        )
+fx_col1, fx_col2 = st.columns([3, 1])
+
+with fx_col1:
+
+    st.number_input(
+        "USD/KRW",
+        min_value=0.0,
+        step=0.01,
+        key="usdkrw",
+        format="%.2f"
+    )
 
 
-        # --------------------------------------------
-        # fast_info
-        # --------------------------------------------
+with fx_col2:
 
-        try:
+    st.write("")
 
-            fi = ticker.fast_info
+    if st.button(
+        "🔄 환율 자동 조회",
+        use_container_width=True
+    ):
 
-            price = fi.get(
-                "last_price"
+        rate, error = get_exchange_rate()
+
+        if error:
+
+            st.error(error)
+
+        else:
+
+            st.session_state.usdkrw = rate
+
+            st.success(
+                f"환율 업데이트 완료: "
+                f"{rate:,.2f}원"
             )
 
-            if price is not None:
-
-                return (
-                    float(price),
-                    None
-                )
-
-        except Exception:
-            pass
+            st.rerun()
 
 
-        # --------------------------------------------
-        # history fallback
-        # --------------------------------------------
-
-        history = ticker.history(
-            period="5d"
-        )
-
-        if history.empty:
-
-            return (
-                None,
-                "환율 데이터를 찾을 수 없습니다."
-            )
-
-        close = (
-            history["Close"]
-            .dropna()
-        )
-
-        if close.empty:
-
-            return (
-                None,
-                "환율 데이터를 찾을 수 없습니다."
-            )
-
-        return (
-            float(close.iloc[-1]),
-            None
-        )
-
-
-    except Exception as e:
-
-        return (
-            None,
-            f"환율 조회 실패: {e}"
-        )
-
+st.caption(
+    f"현재 적용 환율: "
+    f"1 USD = {st.session_state.usdkrw:,.2f} KRW"
+)
 
 # ============================================================
 # 리밸런싱 계산
