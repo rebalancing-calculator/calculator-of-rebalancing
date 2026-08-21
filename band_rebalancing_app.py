@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 
+if "usdkrw" not in st.session_state:
+    st.session_state.usdkrw = 1400.0
 
 @st.cache_data(ttl=300)
 def get_exchange_rate():
