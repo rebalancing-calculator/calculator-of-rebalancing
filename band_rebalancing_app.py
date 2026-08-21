@@ -1068,139 +1068,251 @@ for i, asset in enumerate(
     )
 
 
-    # --------------------------------------------------------
-    # 목표 비중
-    # --------------------------------------------------------
+    # ============================================================
+# 목표 비중 / 밴드
+# ============================================================
 
-    target_col1, target_col2 = (
-        st.columns([5, 1])
+st.markdown("### 목표 비중 및 밴드")
+
+
+# ------------------------------------------------------------
+# 초기 state
+# ------------------------------------------------------------
+
+target_key = f"target_{i}"
+lower_key = f"lower_{i}"
+upper_key = f"upper_{i}"
+
+target_slider_key = f"target_slider_{i}"
+target_number_key = f"target_number_{i}"
+
+lower_slider_key = f"lower_slider_{i}"
+lower_number_key = f"lower_number_{i}"
+
+upper_slider_key = f"upper_slider_{i}"
+upper_number_key = f"upper_number_{i}"
+
+
+if target_key not in st.session_state:
+    st.session_state[target_key] = float(
+        asset["target"]
+    )
+
+if lower_key not in st.session_state:
+    st.session_state[lower_key] = float(
+        asset["lower"]
+    )
+
+if upper_key not in st.session_state:
+    st.session_state[upper_key] = float(
+        asset["upper"]
     )
 
 
-    with target_col1:
+# ------------------------------------------------------------
+# 목표 비중
+# ------------------------------------------------------------
 
-        target_slider = st.slider(
-            "목표 비중",
-            min_value=0.0,
-            max_value=100.0,
-            value=float(
-                asset["target"]
-            ),
-            step=0.5,
-            key=f"target_slider_{i}",
-        )
+target_col1, target_col2 = st.columns([5, 1])
 
 
-    with target_col2:
+with target_col1:
 
-        target_number = st.number_input(
-            "목표 %",
-            min_value=0.0,
-            max_value=100.0,
-            value=float(
-                target_slider
-            ),
-            step=0.5,
-            key=f"target_number_{i}",
-        )
+    target_slider = st.slider(
+        "목표 비중",
+        min_value=0.0,
+        max_value=100.0,
+        value=float(
+            st.session_state[target_key]
+        ),
+        step=0.5,
+        key=target_slider_key,
+    )
 
 
-    # 숫자 입력을 최종 목표값으로 사용
+with target_col2:
+
+    target_number = st.number_input(
+        "목표 %",
+        min_value=0.0,
+        max_value=100.0,
+        value=float(
+            st.session_state[target_key]
+        ),
+        step=0.5,
+        key=target_number_key,
+    )
+
+
+# ------------------------------------------------------------
+# 두 입력값 중 현재 숫자 입력을 우선 사용
+# ------------------------------------------------------------
+
+if target_number != st.session_state[target_key]:
+
+    target = float(target_number)
+
+elif target_slider != st.session_state[target_key]:
+
+    target = float(target_slider)
+
+else:
+
     target = float(
-        target_number
+        st.session_state[target_key]
     )
 
 
-    # --------------------------------------------------------
-    # 하단
-    # --------------------------------------------------------
+st.session_state[target_key] = target
+asset["target"] = target
 
-    lower_col1, lower_col2 = (
-        st.columns([5, 1])
+
+# ------------------------------------------------------------
+# 하단
+# ------------------------------------------------------------
+
+lower = min(
+    float(
+        st.session_state[lower_key]
+    ),
+    target
+)
+
+
+lower_col1, lower_col2 = st.columns([5, 1])
+
+
+with lower_col1:
+
+    lower_slider = st.slider(
+        "하단 비중",
+        min_value=0.0,
+        max_value=target,
+        value=lower,
+        step=0.5,
+        key=lower_slider_key,
     )
 
 
-    with lower_col1:
+with lower_col2:
 
-        lower_slider = st.slider(
-            "하단 비중",
-            min_value=0.0,
-            max_value=target,
-            value=min(
-                float(
-                    asset["lower"]
-                ),
-                target
-            ),
-            step=0.5,
-            key=f"lower_slider_{i}",
-        )
+    lower_number = st.number_input(
+        "하단 %",
+        min_value=0.0,
+        max_value=target,
+        value=lower,
+        step=0.5,
+        key=lower_number_key,
+    )
 
 
-    with lower_col2:
-
-        lower_number = st.number_input(
-            "하단 %",
-            min_value=0.0,
-            max_value=target,
-            value=float(
-                lower_slider
-            ),
-            step=0.5,
-            key=f"lower_number_{i}",
-        )
-
+if lower_number != st.session_state[lower_key]:
 
     lower = float(
         lower_number
     )
 
+elif lower_slider != st.session_state[lower_key]:
 
-    # --------------------------------------------------------
-    # 상단
-    # --------------------------------------------------------
+    lower = float(
+        lower_slider
+    )
 
-    upper_col1, upper_col2 = (
-        st.columns([5, 1])
+else:
+
+    lower = float(
+        st.session_state[lower_key]
     )
 
 
-    with upper_col1:
-
-        upper_slider = st.slider(
-            "상단 비중",
-            min_value=target,
-            max_value=100.0,
-            value=max(
-                float(
-                    asset["upper"]
-                ),
-                target
-            ),
-            step=0.5,
-            key=f"upper_slider_{i}",
-        )
+lower = min(
+    lower,
+    target
+)
 
 
-    with upper_col2:
+st.session_state[lower_key] = lower
+asset["lower"] = lower
 
-        upper_number = st.number_input(
-            "상단 %",
-            min_value=target,
-            max_value=100.0,
-            value=float(
-                upper_slider
-            ),
-            step=0.5,
-            key=f"upper_number_{i}",
-        )
 
+# ------------------------------------------------------------
+# 상단
+# ------------------------------------------------------------
+
+upper = max(
+    float(
+        st.session_state[upper_key]
+    ),
+    target
+)
+
+
+upper_col1, upper_col2 = st.columns([5, 1])
+
+
+with upper_col1:
+
+    upper_slider = st.slider(
+        "상단 비중",
+        min_value=target,
+        max_value=100.0,
+        value=upper,
+        step=0.5,
+        key=upper_slider_key,
+    )
+
+
+with upper_col2:
+
+    upper_number = st.number_input(
+        "상단 %",
+        min_value=target,
+        max_value=100.0,
+        value=upper,
+        step=0.5,
+        key=upper_number_key,
+    )
+
+
+if upper_number != st.session_state[upper_key]:
 
     upper = float(
         upper_number
     )
 
+elif upper_slider != st.session_state[upper_key]:
 
+    upper = float(
+        upper_slider
+    )
+
+else:
+
+    upper = float(
+        st.session_state[upper_key]
+    )
+
+
+upper = max(
+    upper,
+    target
+)
+
+
+st.session_state[upper_key] = upper
+asset["upper"] = upper
+
+
+# ------------------------------------------------------------
+# 표시
+# ------------------------------------------------------------
+
+st.caption(
+    f"밴드: "
+    f"{lower:.1f}% ≤ "
+    f"{target:.1f}% ≤ "
+    f"{upper:.1f}%"
+)
     # --------------------------------------------------------
     # 밴드 저장
     # --------------------------------------------------------
