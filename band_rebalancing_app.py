@@ -471,7 +471,7 @@ if st.button(
 st.header("② 목표 비중 및 밴드")
 
 st.caption(
-    "슬라이더를 움직여 목표 비중과 허용 범위를 설정하세요."
+    "슬라이더 또는 숫자를 직접 입력하여 목표 비중과 밴드를 설정하세요."
 )
 
 
@@ -479,99 +479,267 @@ for i, asset in enumerate(
     st.session_state.assets
 ):
 
-    st.subheader(
-        asset["name"]
-    )
+    st.subheader(asset["name"])
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # 목표 비중
+    # ========================================================
+
+    st.markdown("**목표 비중**")
+
+    col1, col2 = st.columns([5, 1])
+
+    with col1:
+
+        target_slider = st.slider(
+
+            "목표 비중 슬라이더",
+
+            min_value=0.0,
+
+            max_value=100.0,
+
+            value=float(asset["target"]),
+
+            step=0.5,
+
+            key=f"target_slider_{i}",
+
+            label_visibility="collapsed",
+
+            format="%.1f%%"
+
+        )
+
+    with col2:
+
+        target_number = st.number_input(
+
+            "목표 비중",
+
+            min_value=0.0,
+
+            max_value=100.0,
+
+            value=float(asset["target"]),
+
+            step=0.5,
+
+            key=f"target_number_{i}",
+
+            format="%.1f"
+
+        )
+
+    # --------------------------------------------------------
+    # 슬라이더와 숫자 입력 중 변경된 값을 사용
     # --------------------------------------------------------
 
-    asset["target"] = st.slider(
+    if target_slider != asset["target"]:
 
-        "목표 비중",
+        asset["target"] = target_slider
 
-        min_value=0.0,
+        # 숫자 입력도 같은 값으로 맞춤
+        st.session_state[
+            f"target_number_{i}"
+        ] = target_slider
 
-        max_value=100.0,
+    elif target_number != asset["target"]:
 
-        value=float(
-            asset["target"]
-        ),
+        asset["target"] = target_number
 
-        step=0.5,
+        # 슬라이더도 같은 값으로 맞춤
+        st.session_state[
+            f"target_slider_{i}"
+        ] = target_number
 
-        key=f"target_{i}",
 
-        format="%.1f%%"
-
-    )
-
+    # ========================================================
+    # 하단 / 상단
+    # ========================================================
 
     col1, col2 = st.columns(2)
 
 
-    # --------------------------------------------------------
-    # 하단
-    # --------------------------------------------------------
+    # ========================================================
+    # 하단 비중
+    # ========================================================
 
     with col1:
 
-        asset["lower"] = st.slider(
+        st.markdown("**하단 비중**")
 
-            "하단 비중",
-
-            min_value=0.0,
-
-            max_value=asset["target"],
-
-            value=min(
-                float(asset["lower"]),
-                float(asset["target"])
-            ),
-
-            step=0.5,
-
-            key=f"lower_{i}",
-
-            format="%.1f%%"
-
+        col_slider, col_number = st.columns(
+            [4, 1]
         )
 
+        with col_slider:
 
-    # --------------------------------------------------------
-    # 상단
-    # --------------------------------------------------------
+            lower_slider = st.slider(
+
+                "하단 비중 슬라이더",
+
+                min_value=0.0,
+
+                max_value=float(
+                    asset["target"]
+                ),
+
+                value=min(
+                    float(asset["lower"]),
+                    float(asset["target"])
+                ),
+
+                step=0.5,
+
+                key=f"lower_slider_{i}",
+
+                label_visibility="collapsed",
+
+                format="%.1f%%"
+
+            )
+
+        with col_number:
+
+            lower_number = st.number_input(
+
+                "하단 비중",
+
+                min_value=0.0,
+
+                max_value=float(
+                    asset["target"]
+                ),
+
+                value=min(
+                    float(asset["lower"]),
+                    float(asset["target"])
+                ),
+
+                step=0.5,
+
+                key=f"lower_number_{i}",
+
+                format="%.1f"
+
+            )
+
+
+        if lower_slider != asset["lower"]:
+
+            asset["lower"] = lower_slider
+
+            st.session_state[
+                f"lower_number_{i}"
+            ] = lower_slider
+
+        elif lower_number != asset["lower"]:
+
+            asset["lower"] = lower_number
+
+            st.session_state[
+                f"lower_slider_{i}"
+            ] = lower_number
+
+
+    # ========================================================
+    # 상단 비중
+    # ========================================================
 
     with col2:
 
-        asset["upper"] = st.slider(
+        st.markdown("**상단 비중**")
 
-            "상단 비중",
-
-            min_value=asset["target"],
-
-            max_value=100.0,
-
-            value=max(
-                float(asset["upper"]),
-                float(asset["target"])
-            ),
-
-            step=0.5,
-
-            key=f"upper_{i}",
-
-            format="%.1f%%"
-
+        col_slider, col_number = st.columns(
+            [4, 1]
         )
 
+        with col_slider:
 
-    st.divider()
+            upper_slider = st.slider(
+
+                "상단 비중 슬라이더",
+
+                min_value=float(
+                    asset["target"]
+                ),
+
+                max_value=100.0,
+
+                value=max(
+                    float(asset["upper"]),
+                    float(asset["target"])
+                ),
+
+                step=0.5,
+
+                key=f"upper_slider_{i}",
+
+                label_visibility="collapsed",
+
+                format="%.1f%%"
+
+            )
+
+        with col_number:
+
+            upper_number = st.number_input(
+
+                "상단 비중",
+
+                min_value=float(
+                    asset["target"]
+                ),
+
+                max_value=100.0,
+
+                value=max(
+                    float(asset["upper"]),
+                    float(asset["target"])
+                ),
+
+                step=0.5,
+
+                key=f"upper_number_{i}",
+
+                format="%.1f"
+
+            )
 
 
-# ============================================================
+        if upper_slider != asset["upper"]:
+
+            asset["upper"] = upper_slider
+
+            st.session_state[
+                f"upper_number_{i}"
+            ] = upper_slider
+
+        elif upper_number != asset["upper"]:
+
+            asset["upper"] = upper_number
+
+            st.session_state[
+                f"upper_slider_{i}"
+            ] = upper_number
+
+
+    # ========================================================
+    # 현재 설정 표시
+    # ========================================================
+
+    st.caption(
+
+        f"현재 설정: "
+        f"**{asset['lower']:.1f}% "
+        f"≤ {asset['target']:.1f}% "
+        f"≤ {asset['upper']:.1f}%**"
+
+    )
+
+    st.divider()# ============================================================
+
 # 목표비중 합계
 # ============================================================
 
