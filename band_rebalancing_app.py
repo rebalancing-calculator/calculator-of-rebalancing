@@ -1,7 +1,9 @@
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
 import requests
+from supabase import create_client
 
 
 # ============================================================
@@ -19,6 +21,577 @@ st.caption(
     "국내 ETF · 미국 ETF · 직접입력 자산을 모두 원화 기준으로 환산하여 "
     "밴드 리밸런싱을 계산합니다."
 )
+
+
+if is_logged_in():
+    st.success(
+        f"☁️ **저장 모드:** {st.session_state.auth_email} · "
+        "현재 포트폴리오는 계정에 저장할 수 있습니다."
+    )
+else:
+    st.info(
+        "👤 **게스트 모드:** 회원가입 없이 모든 계산 기능을 사용할 수 있습니다. "
+        "로그인하면 포트폴리오를 저장해 다음 방문 때 다시 불러올 수 있습니다."
+    )
+
+
+
+
+# ============================================================
+# SUPABASE AUTH / PORTFOLIO STORAGE
+# ============================================================
+
+def get_supabase_config():
+    """Read Supabase URL + publishable key from Streamlit secrets."""
+    try:
+        section = st.secrets["supabase"]
+        url = section["url"]
+        key = (
+            section.get("publishable_key")
+            or section.get("anon_key")
+        )
+
+        if not url or not key:
+            return None, None
+
+        return str(url), str(key)
+
+    except Exception:
+        return None, None
+
+
+SUPABASE_URL, SUPABASE_KEY = get_supabase_config()
+
+if "supabase_client" not in st.session_state:
+    st.session_state.supabase_client = None
+
+if (
+    st.session_state.supabase_client is None
+    and SUPABASE_URL
+    and SUPABASE_KEY
+):
+    st.session_state.supabase_client = create_client(
+        SUPABASE_URL,
+        SUPABASE_KEY,
+    )
+
+if "auth_user_id" not in st.session_state:
+    st.session_state.auth_user_id = None
+
+if "auth_email" not in st.session_state:
+    st.session_state.auth_email = None
+
+if "auth_message" not in st.session_state:
+    st.session_state.auth_message = ""
+
+if "auth_error" not in st.session_state:
+    st.session_state.auth_error = ""
+
+if "selected_portfolio_name" not in st.session_state:
+    st.session_state.selected_portfolio_name = ""
+
+
+def is_logged_in():
+    return bool(st.session_state.auth_user_id)
+
+
+def sign_in(email, password):
+    """Sign in an existing user."""
+    client = st.session_state.supabase_client
+
+    if client is None:
+        return False, "Supabase가 설정되지 않았습니다."
+
+    try:
+        response = client.auth.sign_in_with_password(
+            {
+                "email": email.strip(),
+                "password": password,
+            }
+        )
+
+        if not response.session or not response.user:
+            return False, (
+                "로그인은 되었지만 세션을 받지 못했습니다. "
+                "이메일 인증이 필요한지 Supabase Auth 설정을 확인해주세요."
+            )
+
+        st.session_state.auth_user_id = str(response.user.id)
+        st.session_state.auth_email = response.user.email
+        return True, "로그인되었습니다."
+
+    except Exception as exc:
+        return False, f"로그인 실패: {exc}"
+
+
+def sign_up(email, password):
+    """Create a permanent Supabase user."""
+    client = st.session_state.supabase_client
+
+    if client is None:
+        return False, "Supabase가 설정되지 않았습니다."
+
+    try:
+        response = client.auth.sign_up(
+            {
+                "email": email.strip(),
+                "password": password,
+            }
+        )
+
+        # Confirm Email이 꺼져 있으면 바로 세션이 생길 수 있음.
+        if response.session and response.user:
+            st.session_state.auth_user_id = str(response.user.id)
+            st.session_state.auth_email = response.user.email
+            return True, "회원가입 및 로그인이 완료되었습니다."
+
+        # Confirm Email이 켜져 있으면 session이 null일 수 있음.
+        return True, (
+            "회원가입이 완료되었습니다. "
+            "이메일 인증이 필요한 설정이라면 메일의 인증 링크를 누른 뒤 로그인해주세요."
+        )
+
+    except Exception as exc:
+        return False, f"회원가입 실패: {exc}"
+
+
+def sign_out():
+    client = st.session_state.supabase_client
+
+    try:
+        if client is not None:
+            client.auth.sign_out()
+    except Exception:
+        pass
+
+    st.session_state.auth_user_id = None
+    st.session_state.auth_email = None
+    st.session_state.auth_message = ""
+    st.session_state.auth_error = ""
+    st.session_state.selected_portfolio_name = ""
+
+
+def portfolio_payload():
+    """
+    저장해야 할 영속 데이터만 저장한다.
+    검색 결과/fetched_price 같은 일시적인 UI 데이터는 저장하지 않는다.
+    """
+    stable_assets = []
+
+    for asset in st.session_state.assets:
+        stable_assets.append(
+            {
+                "name": asset["name"],
+                "ticker": asset["ticker"],
+                "exchange": asset["exchange"],
+                "market": asset["market"],
+                "currency": asset["currency"],
+                "source": asset["source"],
+                "target": float(asset["target"]),
+                "lower": float(asset["lower"]),
+                "upper": float(asset["upper"]),
+                "shares": float(asset["shares"]),
+                "price": float(asset["price"]),
+                "price_date": asset["price_date"],
+            }
+        )
+
+    return {
+        "version": 1,
+        "assets": stable_assets,
+        "cash_krw_input": float(
+            st.session_state.cash_krw_input
+        ),
+        "cash_usd_input": float(
+            st.session_state.cash_usd_input
+        ),
+        "applied_cash_krw": float(
+            st.session_state.applied_cash_krw
+        ),
+        "usdkrw": float(
+            st.session_state.usdkrw
+        ),
+        "usdkrw_date": st.session_state.usdkrw_date,
+    }
+
+
+def restore_portfolio_payload(payload):
+    """Load a saved portfolio into the current app state."""
+    if not isinstance(payload, dict):
+        raise ValueError("저장된 포트폴리오 데이터가 올바르지 않습니다.")
+
+    raw_assets = payload.get("assets", [])
+
+    restored_assets = []
+
+    for raw in raw_assets:
+        restored_assets.append(
+            {
+                "name": raw.get("name", ""),
+                "ticker": raw.get("ticker", ""),
+                "exchange": raw.get("exchange", ""),
+                "market": raw.get("market", "기타"),
+                "currency": raw.get("currency", "KRW"),
+                "source": raw.get("source", "manual"),
+                "target": float(raw.get("target", 0.0)),
+                "lower": float(raw.get("lower", 0.0)),
+                "upper": float(raw.get("upper", 0.0)),
+                "shares": float(raw.get("shares", 0.0)),
+                "price": float(raw.get("price", 0.0)),
+                "price_date": raw.get("price_date", ""),
+                "fetched_price": None,
+                "fetched_price_date": "",
+                "price_message": "",
+                "search_results": [],
+            }
+        )
+
+    st.session_state.assets = restored_assets
+    st.session_state.cash_krw_input = float(
+        payload.get("cash_krw_input", 0.0)
+    )
+    st.session_state.cash_usd_input = float(
+        payload.get("cash_usd_input", 0.0)
+    )
+    st.session_state.applied_cash_krw = float(
+        payload.get(
+            "applied_cash_krw",
+            st.session_state.cash_krw_input,
+        )
+    )
+    st.session_state.usdkrw = float(
+        payload.get("usdkrw", 1400.0)
+    )
+    st.session_state.usdkrw_date = payload.get(
+        "usdkrw_date",
+        "",
+    )
+
+    st.session_state.result = None
+
+
+def list_saved_portfolios():
+    """Return this user's saved portfolio names."""
+    client = st.session_state.supabase_client
+    user_id = st.session_state.auth_user_id
+
+    if client is None or not user_id:
+        return []
+
+    response = (
+        client.table("portfolios")
+        .select("name, updated_at")
+        .eq("user_id", user_id)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+
+    return response.data or []
+
+
+def save_portfolio(name):
+    """Upsert one named portfolio for the current user."""
+    client = st.session_state.supabase_client
+    user_id = st.session_state.auth_user_id
+
+    if client is None or not user_id:
+        return False, "먼저 로그인해주세요."
+
+    name = name.strip()
+
+    if not name:
+        return False, "포트폴리오 이름을 입력해주세요."
+
+    payload = {
+        "user_id": user_id,
+        "name": name,
+        "payload": portfolio_payload(),
+    }
+
+    try:
+        response = (
+            client.table("portfolios")
+            .upsert(
+                payload,
+                on_conflict="user_id,name",
+            )
+            .execute()
+        )
+
+        if not response.data:
+            return False, "저장 결과를 확인하지 못했습니다."
+
+        st.session_state.selected_portfolio_name = name
+        return True, f"'{name}' 포트폴리오를 저장했습니다."
+
+    except Exception as exc:
+        return False, f"저장 실패: {exc}"
+
+
+def load_portfolio(name):
+    """Load one named portfolio belonging to the current user."""
+    client = st.session_state.supabase_client
+    user_id = st.session_state.auth_user_id
+
+    if client is None or not user_id:
+        return False, "먼저 로그인해주세요."
+
+    try:
+        response = (
+            client.table("portfolios")
+            .select("name, payload")
+            .eq("user_id", user_id)
+            .eq("name", name)
+            .limit(1)
+            .execute()
+        )
+
+        rows = response.data or []
+
+        if not rows:
+            return False, "저장된 포트폴리오를 찾지 못했습니다."
+
+        restore_portfolio_payload(rows[0]["payload"])
+        st.session_state.selected_portfolio_name = name
+
+        return True, f"'{name}' 포트폴리오를 불러왔습니다."
+
+    except Exception as exc:
+        return False, f"불러오기 실패: {exc}"
+
+
+def delete_portfolio(name):
+    """Delete one named portfolio belonging to the current user."""
+    client = st.session_state.supabase_client
+    user_id = st.session_state.auth_user_id
+
+    if client is None or not user_id:
+        return False, "먼저 로그인해주세요."
+
+    try:
+        (
+            client.table("portfolios")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("name", name)
+            .execute()
+        )
+
+        if (
+            st.session_state.selected_portfolio_name
+            == name
+        ):
+            st.session_state.selected_portfolio_name = ""
+
+        return True, f"'{name}' 포트폴리오를 삭제했습니다."
+
+    except Exception as exc:
+        return False, f"삭제 실패: {exc}"
+
+
+# ============================================================
+# AUTH UI
+# ============================================================
+
+with st.sidebar:
+    st.header("👤 계정")
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.info(
+            "현재 게스트 모드입니다.\n\n"
+            "Supabase 설정을 추가하면 회원가입·로그인·포트폴리오 저장을 사용할 수 있습니다."
+        )
+
+    elif not is_logged_in():
+        auth_tab_login, auth_tab_signup = st.tabs(
+            ["로그인", "회원가입"]
+        )
+
+        with auth_tab_login:
+            login_email = st.text_input(
+                "이메일",
+                key="login_email",
+            )
+
+            login_password = st.text_input(
+                "비밀번호",
+                type="password",
+                key="login_password",
+            )
+
+            if st.button(
+                "로그인",
+                key="login_button",
+                use_container_width=True,
+            ):
+                ok, message = sign_in(
+                    login_email,
+                    login_password,
+                )
+
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+        with auth_tab_signup:
+            signup_email = st.text_input(
+                "이메일",
+                key="signup_email",
+            )
+
+            signup_password = st.text_input(
+                "비밀번호",
+                type="password",
+                key="signup_password",
+            )
+
+            signup_password2 = st.text_input(
+                "비밀번호 확인",
+                type="password",
+                key="signup_password2",
+            )
+
+            if st.button(
+                "회원가입",
+                key="signup_button",
+                use_container_width=True,
+            ):
+                if len(signup_password) < 6:
+                    st.error(
+                        "비밀번호는 최소 6자 이상을 권장합니다."
+                    )
+                elif signup_password != signup_password2:
+                    st.error(
+                        "비밀번호가 일치하지 않습니다."
+                    )
+                else:
+                    ok, message = sign_up(
+                        signup_email,
+                        signup_password,
+                    )
+
+                    if ok:
+                        st.success(message)
+                    else:
+                        st.error(message)
+
+        st.caption(
+            "로그인하지 않아도 계산기는 그대로 사용할 수 있습니다."
+        )
+
+    else:
+        st.success(
+            f"로그인됨\n\n{st.session_state.auth_email}"
+        )
+
+        if st.button(
+            "로그아웃",
+            key="logout_button",
+            use_container_width=True,
+        ):
+            sign_out()
+            st.rerun()
+
+        st.divider()
+
+        st.subheader("💾 포트폴리오 저장")
+
+        portfolio_name = st.text_input(
+            "포트폴리오 이름",
+            value=(
+                st.session_state.selected_portfolio_name
+                or "내 포트폴리오"
+            ),
+            key="portfolio_name_input",
+        )
+
+        if st.button(
+            "현재 포트폴리오 저장",
+            key="save_portfolio_button",
+            use_container_width=True,
+        ):
+            ok, message = save_portfolio(
+                portfolio_name
+            )
+
+            if ok:
+                st.success(message)
+            else:
+                st.error(message)
+
+        try:
+            saved_portfolios = list_saved_portfolios()
+            saved_names = [
+                row["name"]
+                for row in saved_portfolios
+            ]
+        except Exception as exc:
+            saved_portfolios = []
+            saved_names = []
+            st.error(
+                f"저장 목록 조회 실패: {exc}"
+            )
+
+        if saved_names:
+            default_index = 0
+
+            if (
+                st.session_state.selected_portfolio_name
+                in saved_names
+            ):
+                default_index = saved_names.index(
+                    st.session_state.selected_portfolio_name
+                )
+
+            selected_saved = st.selectbox(
+                "저장된 포트폴리오",
+                saved_names,
+                index=default_index,
+                key="saved_portfolio_select",
+            )
+
+            if st.button(
+                "선택 포트폴리오 불러오기",
+                key="load_portfolio_button",
+                use_container_width=True,
+            ):
+                ok, message = load_portfolio(
+                    selected_saved
+                )
+
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+            if st.button(
+                "선택 포트폴리오 삭제",
+                key="delete_portfolio_button",
+                use_container_width=True,
+            ):
+                ok, message = delete_portfolio(
+                    selected_saved
+                )
+
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+        else:
+            st.caption(
+                "저장된 포트폴리오가 없습니다."
+            )
+
+        st.info(
+            "포트폴리오 설정, 목표/밴드, 보유 주식 수, "
+            "가격, 현금 입력을 저장할 수 있습니다. "
+            "다음 방문에는 보유량과 현금만 수정해서 사용할 수 있습니다."
+        )
 
 
 # ============================================================
@@ -54,6 +627,8 @@ if "latest_data_message" not in st.session_state:
 
 if "result" not in st.session_state:
     st.session_state.result = None
+
+# Continue with the original application below.
 
 
 # ============================================================
